@@ -10,6 +10,7 @@ from database import *
 import helper
 
 # callback for handlers
+@run_async
 def worldstats(update,context):
     total_confirmed = 0
     total_deaths = 0
@@ -43,6 +44,8 @@ def worldstats(update,context):
            "Total confirmed cases : " + total_confirmed_str + "\n" + \
            "Total deaths : " + total_deaths_str
     context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode = telegram.ParseMode.HTML)
+
+@run_async
 def stats(update,context):
     total_confirmed = 0
     total_deaths = 0
@@ -100,6 +103,8 @@ def stats(update,context):
                "Total confirmed cases : " + total_confirmed_str + "\n" + \
                "Total deaths : " + total_deaths_str
         context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode = telegram.ParseMode.HTML)
+
+@run_async
 def countries(update,context):
     #list of available countries
     countries = context.bot_data["countries"]
@@ -108,6 +113,8 @@ def countries(update,context):
         line = str(i+1) + ". " + countries[i] + '\n'
         text += line
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+
+@run_async
 def top(update,context):
 
     # get latest date available
@@ -159,6 +166,8 @@ def top(update,context):
         text += line
         index += 1
     context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode = telegram.ParseMode.HTML)
+
+@run_async
 def news(update,context):
     country_name = ' '.join(context.args)
     if country_name in context.bot_data["countries"]:
@@ -229,7 +238,7 @@ def main():
     token = os.environ['BOT_API_KEY']
     bot = telegram.Bot(token=token)
     print(bot.get_me())
-    updater = Updater(token=token, use_context=True)
+    updater = Updater(token=token, use_context=True, workers=20)
     dispatcher = updater.dispatcher
 
     # initialization store country data
