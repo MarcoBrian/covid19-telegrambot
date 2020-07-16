@@ -10,7 +10,7 @@ from mongo_db import *
 import helper
 import datetime
 
-import postgres_db
+# import postgres_db
 # from postgres_db import *
 
 # callback for handlers
@@ -346,7 +346,7 @@ def main():
     updater.start_webhook(listen="0.0.0.0",
                           port=PORT,
                           url_path=token)
-    updater.bot.set_webhook("https://hidden-depths-10325.herokuapp.com/" + token)
+    updater.bot.set_webhook(os.getenv('URL') + token)
 
     updater.idle()
 
