@@ -5,54 +5,103 @@ import telegram
 from telegram.ext import Updater
 from telegram.ext import CommandHandler, MessageHandler, Filters
 from telegram.ext.dispatcher import run_async
-import database
-from database import *
+import mongo_db
+from mongo_db import *
 import helper
+import datetime
+
+import postgres_db
+# from postgres_db import *
 
 # callback for handlers
-@run_async
-def worldstats(update,context):
-    total_confirmed = 0
-    total_deaths = 0
-    current_date = None
+
+def broadcast_subscribers(context: telegram.ext.CallbackContext):
     # get latest date available
-    meta = database.get_latest_metadata()
+    meta = mongo_db.get_latest_metadata()
     last_date = meta["last_date"]
     # check context bot_data for world stat cache
     world_object = context.bot_data.get("worldstats", None)
     if world_object is not None and world_object["date"] == last_date:
-        print("catched")
+        print("cached")
         # fetch data from cache
-        total_confirmed = world_object["confirmed"]
-        total_deaths = world_object["deaths"]
-        current_date = last_date
     else:
         print("storing in cache")
-        total_confirmed , total_deaths = database.fetch_cases(last_date)
-        current_date = last_date
+        total_confirmed , total_deaths, total_recovered = mongo_db.fetch_cases(last_date)
         # store data in bot_data cache
-        world_object = {}
-        world_object["confirmed"] = total_confirmed
-        world_object["deaths"] = total_deaths
-        world_object["date"] = current_date
+        world_object = helper.put_info_to_object(total_confirmed,total_deaths,total_recovered,last_date)
         context.bot_data["worldstats"] = world_object
 
-    total_confirmed_str = f"{total_confirmed:,}"
-    total_deaths_str = f"{total_deaths:,}"
-    date_str = "<b>" + last_date.strftime("%d %B, %Y") + "</b>"
-    text = "Global COVID19 statistics as of " + date_str + ". \n\n" + \
-           "Total confirmed cases : " + total_confirmed_str + "\n" + \
-           "Total deaths : " + total_deaths_str
-    context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode = telegram.ParseMode.HTML)
+    text = helper.stats_to_text_world(world_object,last_date)
+
+    chat_ids = postgres_db.get_chat_ids()
+    if chat_ids != None:
+        for chat in chat_ids:
+            context.bot.send_message(chat_id=chat, text=text)
+    else:
+        print("Nothing here")
+
+
+
+@run_async
+def subscribe(update,context):
+    chat_id = update.effective_chat.id
+    message = postgres_db.add_chat_id_to_postgres(chat_id)
+    context.bot.send_message(chat_id=chat_id,text=message)
+
+
+@run_async
+def world_daily(update,context):
+    # get latest date available
+    meta = mongo_db.get_latest_metadata()
+    last_date = meta["last_date"]
+    yesterday = last_date - datetime.timedelta(days=1)
+    increase_confirmed , increase_deaths = mongo_db.fetch_cases_date_diff(last_date, yesterday)
+    obj = {"confirmed" : increase_confirmed ,
+           "deaths" : increase_deaths,
+           "current_date" : last_date,
+           "before_date" : yesterday}
+    text = helper.stats_to_text_world_diff(obj)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=telegram.ParseMode.HTML)
+
+@run_async
+def world_weekly(update,context):
+    # get latest date available
+    meta = mongo_db.get_latest_metadata()
+    last_date = meta["last_date"]
+    yesterday = last_date - datetime.timedelta(days=7)
+    increase_confirmed, increase_deaths = mongo_db.fetch_cases_date_diff(last_date, yesterday)
+    obj = {"confirmed": increase_confirmed,
+           "deaths": increase_deaths,
+           "current_date": last_date,
+           "before_date": yesterday}
+    text = helper.stats_to_text_world_diff(obj)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=telegram.ParseMode.HTML)
+
+@run_async
+def worldstats(update,context):
+    # get latest date available
+    meta = mongo_db.get_latest_metadata()
+    last_date = meta["last_date"]
+    # check context bot_data for world stat cache
+    world_object = context.bot_data.get("worldstats", None)
+    if world_object is not None and world_object["date"] == last_date:
+        print("cached")
+        # fetch data from cache
+    else:
+        print("storing in cache")
+        total_confirmed , total_deaths, total_recovered = mongo_db.fetch_cases(last_date)
+        # store data in bot_data cache
+        world_object = helper.put_info_to_object(total_confirmed,total_deaths,total_recovered,last_date)
+        context.bot_data["worldstats"] = world_object
+
+    text = helper.stats_to_text_world(world_object,last_date)
+    context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=telegram.ParseMode.HTML)
 
 @run_async
 def stats(update,context):
-    total_confirmed = 0
-    total_deaths = 0
-    current_date = None
 
     # get latest date available
-    meta = database.get_latest_metadata()
+    meta = mongo_db.get_latest_metadata()
     last_date = meta["last_date"]
 
     country_name = ' '.join(context.args)
@@ -79,30 +128,18 @@ def stats(update,context):
     else:
         country_object = context.bot_data.get(country_name, None)
         if country_object is not None and country_object["date"] == last_date:
-            print("catched")
+            print("cached")
             # fetch data from cache
-            total_confirmed = country_object["confirmed"]
-            total_deaths = country_object["deaths"]
-            current_date = last_date
         else:
             print("storing in cache")
-            total_confirmed , total_deaths = database.fetch_cases(last_date,country_name)
+            total_confirmed , total_deaths, total_recovered = mongo_db.fetch_cases(last_date, country_name)
             current_date = last_date
             # store data in bot_data cache
-            country_object = {}
-            country_object["confirmed"] = total_confirmed
-            country_object["deaths"] = total_deaths
-            country_object["date"] = current_date
+            country_object = helper.put_info_to_object(total_confirmed,total_deaths,total_recovered,current_date)
             context.bot_data[country_name] = country_object
 
-        total_confirmed_str = f"{total_confirmed:,}"
-        total_deaths_str = f"{total_deaths:,}"
-        date_str = "<b>" + last_date.strftime("%d %B, %Y") + "</b>"
-        country_name = helper.format_country_name(country_name)
-        text = "COVID19 statistics of " + country_name +  " as of " + date_str + ". \n\n" + \
-               "Total confirmed cases : " + total_confirmed_str + "\n" + \
-               "Total deaths : " + total_deaths_str
-        context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode = telegram.ParseMode.HTML)
+        text = helper.stats_to_text_country(country_object,last_date,country_name)
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=telegram.ParseMode.HTML)
 
 @run_async
 def countries(update,context):
@@ -118,7 +155,7 @@ def countries(update,context):
 def top(update,context):
 
     # get latest date available
-    meta = database.get_latest_metadata()
+    meta = mongo_db.get_latest_metadata()
     last_date = meta["last_date"]
     top = 0
 
@@ -140,7 +177,7 @@ def top(update,context):
         return
     date_str = "<b>" + last_date.strftime("%d %B, %Y") + "</b>"
     text = 'Top ' + str(top) + ' countries with highest confirmed cases as of ' + date_str + ' : \n\n'
-    results = global_stat.find({"date": last_date}).sort("confirmed", pymongo.DESCENDING).limit(top)
+    results = mongo_db.find_top(last_date, top)
     index = 1
     for result in results:
         line = ''
@@ -160,8 +197,18 @@ def top(update,context):
             deaths = result["deaths"]
             deaths_str = f"{deaths:,}"
             line += "deaths : " + deaths_str + "\n"
+
         except Exception as e:
             logging.warning(e)
+
+        try:
+            recovered = result["recovered"]
+            recovered_str = f"{recovered:,}"
+            line += "recovered : " + recovered_str + "\n"
+
+        except Exception as e:
+            logging.warning(e)
+
         line += "\n"
         text += line
         index += 1
@@ -185,6 +232,7 @@ def news(update,context):
         context.bot.send_message(chat_id=update.effective_chat.id, text='Please place a country next to the command')
         return
 
+    countries_list.append("Hong Kong")
     if country_name not in countries_list:
         context.bot.send_message(chat_id=update.effective_chat.id, text='Please enter one of the countries as argument')
     else:
@@ -201,7 +249,6 @@ def news(update,context):
             context.bot.send_message(chat_id=update.effective_chat.id,
                                      text=text, parse_mode=telegram.ParseMode.HTML)
             time.sleep(2.5) #small delay in sending for better UX
-
 
 @run_async
 def start(update,context):
@@ -220,7 +267,9 @@ def info(update,context):
            '/countries - display a list of available countries \n\n' \
            '/top [number] - enter a numeric argument and it will display the top [number] countries with highest cases.' \
            '(ex /top 10 will display top 10 countries with highest cases of COVID19) \n\n' \
-           '/news [country] - will get most recent news of COVID19 in the country (retrieves 10 articles) \n'
+           '/news [country] - will get most recent news of COVID19 in the country (retrieves 10 articles) \n' \
+           '/daily - Global daily increase \n' \
+           '/weekly - Global weekly increase \n'
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
 
 # handling unknown command and non-commands
@@ -234,6 +283,8 @@ def unknown(update, context):
 def noncommand(update, context):
     context.bot.send_message(chat_id=update.effective_chat.id, text='/info for description of available commands')
 
+
+
 def main():
     token = os.environ['BOT_API_KEY']
     bot = telegram.Bot(token=token)
@@ -241,11 +292,19 @@ def main():
     updater = Updater(token=token, use_context=True, workers=20)
     dispatcher = updater.dispatcher
 
-    # initialization store country data
-    meta = database.get_latest_metadata()
+    # jobqueue = updater.job_queue
+    # jobqueue.run_daily(broadcast_subscribers,datetime.time())
+
+    # cache store country data inside context
+    meta = mongo_db.get_latest_metadata()
     dispatcher.bot_data["countries"] = meta["countries"]
 
-    # register handlers
+
+    # Subscribe feature ( removed because Heroku free version)
+    # subscribe_handler = CommandHandler('subscribe', subscribe)
+    # dispatcher.add_handler(subscribe_handler)
+
+    # Registering handlers
     start_handler = CommandHandler('start', start)
     dispatcher.add_handler(start_handler)
 
@@ -261,11 +320,17 @@ def main():
     info_handler = CommandHandler('info', info)
     dispatcher.add_handler(info_handler)
 
-    top_handler = CommandHandler('top',top)
+    top_handler = CommandHandler('top', top)
     dispatcher.add_handler(top_handler)
 
     news_handler = CommandHandler('news', news)
     dispatcher.add_handler(news_handler)
+
+    daily_handler = CommandHandler('daily', world_daily)
+    dispatcher.add_handler(daily_handler)
+
+    weekly_handler = CommandHandler('weekly', world_weekly)
+    dispatcher.add_handler(weekly_handler)
 
     noncommand_handler = MessageHandler(Filters.text & (~Filters.command), noncommand)
     dispatcher.add_handler(noncommand_handler)
@@ -273,11 +338,16 @@ def main():
     unknown_handler = MessageHandler(Filters.command, unknown)
     dispatcher.add_handler(unknown_handler)
 
+    # development
+    # updater.start_polling()
+
+    # production
     PORT = int(os.environ.get('PORT','8443'))
     updater.start_webhook(listen="0.0.0.0",
                           port=PORT,
                           url_path=token)
     updater.bot.set_webhook("https://hidden-depths-10325.herokuapp.com/" + token)
+
     updater.idle()
 
 main()
