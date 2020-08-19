@@ -39,8 +39,6 @@ Currently the available bot commands are:
 
 ## Demo 
 
-https://github.com/MarcoBrian/covid19-telegrambot/blob/master/assets/no2.gif
-
 ![Start](https://github.com/MarcoBrian/covid19-telegrambot/blob/master/assets/no2.gif)
 
 ![news](https://github.com/MarcoBrian/covid19-telegrambot/blob/master/assets/start.gif)
