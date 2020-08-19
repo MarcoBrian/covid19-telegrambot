@@ -36,3 +36,9 @@ Currently the available bot commands are:
 - /daily - Global daily increase
 
 - /weekly - Global weekly increase 
+
+## Demo 
+
+![Start](https://github.com/MarcoBrian/covid19-telegrambot/tree/master/assets/no2.gif)
+
+![news](https://github.com/MarcoBrian/covid19-telegrambot/tree/master/assets/start.gif)
